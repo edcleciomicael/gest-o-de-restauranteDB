@@ -217,87 +217,261 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
   } elseif ($acao === 'rem_item') {
-    $pedido_id = intval($_POST['pedido_id'] ?? 0);
-    $produto_id = intval($_POST['produto_id'] ?? 0);
-    $db = lerDB();
-    foreach ($db['pedidos'] as &$ped) {
-      if ($ped['id'] == $pedido_id) {
-        $ped['itens'] = array_values(array_filter($ped['itens'], fn($i) => $i['produto_id'] != $produto_id));
-        $total = 0;
-        foreach ($ped['itens'] as $it) $total += $it['subtotal'];
-        $ped['total'] = round($total, 2);
-        break;
-      }
+
+    $pedido_id =
+    intval($_POST['pedido_id'] ?? 0);
+
+    $produto_id =
+    intval($_POST['produto_id'] ?? 0);
+
+    try {
+
+        $stmt =
+        $conn->prepare("
+            DELETE FROM pedido_itens
+            WHERE pedido_id = :pedido_id
+            AND produto_id = :produto_id
+        ");
+
+        $stmt->execute([
+            ':pedido_id'
+            => $pedido_id,
+
+            ':produto_id'
+            => $produto_id
+        ]);
+
+        $stmt =
+        $conn->prepare("
+            UPDATE pedidos
+            SET total = (
+                SELECT
+                COALESCE(
+                    SUM(subtotal),
+                    0
+                )
+                FROM pedido_itens
+                WHERE pedido_id =
+                :pedido_id
+            )
+            WHERE id =
+            :pedido_id
+        ");
+
+        $stmt->execute([
+            ':pedido_id'
+            => $pedido_id
+        ]);
+
+        $msg =
+        'Item removido!';
+
+    } catch(Exception $e) {
+
+        $erro =
+        $e->getMessage();
     }
-    salvarDB($db);
-    $db = lerDB();
-    $msg = 'Item removido!';
   } elseif ($acao === 'status') {
-    $pedido_id = intval($_POST['pedido_id'] ?? 0);
-    $novo_status = $_POST['novo_status'] ?? '';
-    $db = lerDB();
-    foreach ($db['pedidos'] as &$ped) {
-      if ($ped['id'] == $pedido_id) {
-        $ped['status'] = $novo_status;
-        if ($novo_status === 'fechado') $ped['fechado_em'] = dataHoraAtual();
-        if (in_array($novo_status, ['fechado', 'cancelado'])) {
-          $mesa_id = $ped['mesa_id'];
-          foreach ($db['mesas'] as &$m) {
-            if ($m['id'] == $mesa_id) {
-              $m['status'] = 'livre';
-              break;
-            }
-          }
+
+    $pedido_id =
+    intval($_POST['pedido_id'] ?? 0);
+
+    $novo_status =
+    $_POST['novo_status'] ?? '';
+
+    try {
+
+        $stmt =
+        $conn->prepare("
+            UPDATE pedidos
+            SET
+                status = :status,
+
+                fechado_em =
+                CASE
+                    WHEN :status
+                    IN (
+                        'fechado',
+                        'cancelado'
+                    )
+                    THEN NOW()
+                    ELSE fechado_em
+                END
+            WHERE id = :id
+        ");
+
+        $stmt->execute([
+            ':status'
+            => $novo_status,
+
+            ':id'
+            => $pedido_id
+        ]);
+
+        if (
+            in_array(
+                $novo_status,
+                [
+                    'fechado',
+                    'cancelado'
+                ]
+            )
+        ) {
+
+            $stmt =
+            $conn->prepare("
+                UPDATE mesas
+                SET status =
+                'livre'
+                WHERE id = (
+                    SELECT mesa_id
+                    FROM pedidos
+                    WHERE id = :id
+                )
+            ");
+
+            $stmt->execute([
+                ':id'
+                => $pedido_id
+            ]);
         }
-        break;
-      }
+
+        $msg =
+        'Status atualizado!';
+
+    } catch(Exception $e) {
+
+        $erro =
+        $e->getMessage();
     }
-    salvarDB($db);
-    $db = lerDB();
-    $msg = 'Status atualizado!';
-  } elseif ($acao === 'fechar_pagar') {
-    $pedido_id = intval($_POST['pedido_id'] ?? 0);
-    $forma = $_POST['forma_pagamento'] ?? 'dinheiro';
-    $valor_pago = floatval(str_replace(',', '.', $_POST['valor_pago'] ?? 0));
-    $db = lerDB();
-    $total_ped = 0;
-    $mesa_id_ped = 0;
-    foreach ($db['pedidos'] as &$ped) {
-      if ($ped['id'] == $pedido_id) {
-        $total_ped = $ped['total'];
-        $mesa_id_ped = $ped['mesa_id'];
-        $ped['status'] = 'fechado';
-        $ped['fechado_em'] = dataHoraAtual();
-        break;
-      }
+ } elseif ($acao === 'fechar_pagar') {
+
+    $pedido_id =
+    intval($_POST['pedido_id'] ?? 0);
+
+    $forma =
+    $_POST['forma_pagamento']
+    ?? 'dinheiro';
+
+    $valor_pago =
+    floatval(
+        str_replace(
+            ',',
+            '.',
+            $_POST['valor_pago']
+            ?? 0
+        )
+    );
+
+    try {
+
+        $stmt =
+        $conn->prepare("
+            SELECT
+                total,
+                mesa_id
+            FROM pedidos
+            WHERE id = :id
+            LIMIT 1
+        ");
+
+        $stmt->execute([
+            ':id'
+            => $pedido_id
+        ]);
+
+        $pedido =
+        $stmt->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if (!$pedido) {
+
+            throw new Exception(
+                'Pedido não encontrado.'
+            );
+        }
+
+        $troco =
+        max(
+            0,
+            $valor_pago
+            - $pedido['total']
+        );
+
+        $stmt =
+        $conn->prepare("
+            INSERT INTO pagamentos
+            (
+                pedido_id,
+                forma,
+                valor,
+                troco,
+                criado_em
+            )
+            VALUES
+            (
+                :pedido_id,
+                :forma,
+                :valor,
+                :troco,
+                NOW()
+            )
+        ");
+
+        $stmt->execute([
+
+            ':pedido_id'
+            => $pedido_id,
+
+            ':forma'
+            => $forma,
+
+            ':valor'
+            => $pedido['total'],
+
+            ':troco'
+            => $troco
+        ]);
+
+        $stmt =
+        $conn->prepare("
+            UPDATE pedidos
+            SET
+                status = 'fechado',
+                fechado_em =
+                NOW()
+            WHERE id = :id
+        ");
+
+        $stmt->execute([
+            ':id'
+            => $pedido_id
+        ]);
+
+        $stmt =
+        $conn->prepare("
+            UPDATE mesas
+            SET status =
+            'livre'
+            WHERE id = :mesa_id
+        ");
+
+        $stmt->execute([
+            ':mesa_id'
+            => $pedido['mesa_id']
+        ]);
+
+        $msg =
+        'Pedido fechado e pagamento registrado!';
+
+    } catch(Exception $e) {
+
+        $erro =
+        $e->getMessage();
     }
-    foreach ($db['mesas'] as &$m) {
-      if ($m['id'] == $mesa_id_ped) {
-        $m['status'] = 'livre';
-        break;
-      }
-    }
-    $novo_pag_id = proximoId('pagamentos');
-    $db = lerDB();
-    $db['pagamentos'][] = ['id' => $novo_pag_id, 'pedido_id' => $pedido_id, 'forma' => $forma, 'valor' => $total_ped, 'troco' => max(0, $valor_pago - $total_ped), 'criado_em' => dataHoraAtual()];
-    foreach ($db['pedidos'] as &$ped) {
-      if ($ped['id'] == $pedido_id) {
-        $ped['status'] = 'fechado';
-        $ped['fechado_em'] = dataHoraAtual();
-        break;
-      }
-    }
-    foreach ($db['mesas'] as &$m) {
-      if ($m['id'] == $mesa_id_ped) {
-        $m['status'] = 'livre';
-        break;
-      }
-    }
-    salvarDB($db);
-    $db = lerDB();
-    $msg = 'Pedido fechado e pagamento registrado!';
-  }
-}
+ }
+} 
 $filtro_status = $_GET['status'] ?? '';
 $sql = "
 SELECT

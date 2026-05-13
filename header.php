@@ -144,10 +144,10 @@ footer{text-align:center;padding:18px 0 10px;font-size:.72rem;color:#555;border-
   </nav>
   <div class="sidebar-footer">
     <div class="user-info">
-      <div class="user-avatar"><?= strtoupper(substr($_SESSION['usuario_nome'], 0, 1)) ?></div>
+      <div class="user-avatar"><?= strtoupper(substr($_SESSION['usuario_nome'] ?? 'Usuário', 0, 1)) ?></div>
       <div>
-        <div class="user-name"><?= htmlspecialchars($_SESSION['usuario_nome']) ?></div>
-        <div class="user-role"><?= ucfirst($_SESSION['usuario_perfil']) ?></div>
+        <div class="user-name"><?= htmlspecialchars($_SESSION['usuario_nome'] ?? 'Usuário') ?></div>
+        <div class="user-role"><?= ucfirst($_SESSION['usuario_perfil'] ?? 'Administrador') ?></div>
       </div>
     </div>
     <a href="logout.php" class="btn-logout">⏻ Sair do Sistema</a>

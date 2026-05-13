@@ -56,6 +56,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $e->getMessage();
   }
 }
+
+/*$conn = db();
+
+$email = $_POST['email'] ?? '';
+$senha = $_POST['senha'] ?? '';
+
+$sql = "
+    SELECT *
+    FROM usuarios
+    WHERE email = :email
+    LIMIT 1
+";
+
+$stmt = $conn->prepare($sql);
+
+$stmt->execute([
+    ':email' => $email
+]);
+
+$usuario = $stmt->fetch();
+
+if ($usuario && password_verify($senha, $usuario['senha'])) {
+
+    $_SESSION['usuario_id'] = $usuario['id'];
+    $_SESSION['usuario_nome'] = $usuario['nome'];
+    $_SESSION['usuario_email'] = $usuario['email'];
+    $_SESSION['usuario_perfil'] = $usuario['perfil'];
+
+    header('Location: index.php');
+    exit;
+
+} else {
+
+    $erro = 'E-mail ou senha inválidos.';
+}*/
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
